@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import {
   MIN_HOST_VERSION,
+  MAX_HOST_VERSION_EXCLUSIVE,
   assertHostCompatible,
   compareSemver,
   detectHostDshVersion,
@@ -67,7 +68,10 @@ throwsWith(
 console.log('\n[assertHostCompatible: pass paths]');
 check(assertHostCompatible({ version: '0.1.2-rc.1' }) === '0.1.2-rc.1', 'exact floor passes');
 check(assertHostCompatible({ version: '0.1.2' }) === '0.1.2', 'release newer than prerelease floor passes');
-check(assertHostCompatible({ version: '0.2.0-rc.1' }) === '0.2.0-rc.1', 'next-line prerelease passes (<0.2.0 not enforced here, only >= floor)');
+check(assertHostCompatible({ version: '0.1.5-rc.2' }) === '0.1.5-rc.2', 'latest verified host passes');
+check(assertHostCompatible({ version: '0.1.5' }) === '0.1.5', 'the last allowed line passes, prerelease or not');
+check(assertHostCompatible({ version: '0.1.6-alpha.1', maxExclusiveVersion: '0.1.7' }) === '0.1.6-alpha.1',
+  'custom ceiling is honored (0.1.6 allowed when the ceiling is 0.1.7)');
 check(assertHostCompatible({ version: undefined }) === undefined, 'undetectable version fails open (no throw)');
 throwsWith(
   () => assertHostCompatible({ version: '0.1.1' }),
@@ -75,12 +79,53 @@ throwsWith(
   'explicit version overrides an undetectable host (throws, proving the override path)',
 );
 
+console.log('\n[assertHostCompatible: fail-fast at and above the ceiling]');
+// 2026-09-28: DSH 0.1.7 replaced directory agent presets with declarative ones
+// declared by plugin bundles, so this preset line would install and then never
+// appear. The ceiling turns that silent no-op into a readable refusal — and it
+// is a LINE boundary: the whole 0.1.6 line is refused, prereleases included
+// (the first cut compared with full semver, which let 0.1.6-alpha.1 through).
+throwsWith(
+  () => assertHostCompatible({ version: '0.1.7-rc.2' }),
+  ['< 0.1.6', '0.1.7-rc.2', 'declarative', '0.1.5-rc.2'],
+  'the declarative-preset host line is refused with the reason and the fix',
+);
+throwsWith(
+  () => assertHostCompatible({ version: '0.1.6-alpha.1' }),
+  ['< 0.1.6'],
+  'a 0.1.6 prerelease is refused too (prerelease must not slip under the ceiling)',
+);
+throwsWith(
+  () => assertHostCompatible({ version: '0.1.6-rc.1' }),
+  ['< 0.1.6'],
+  'any 0.1.6 prerelease is refused',
+);
+throwsWith(
+  () => assertHostCompatible({ version: '0.1.6' }),
+  ['< 0.1.6'],
+  'the 0.1.6 release itself is refused',
+);
+throwsWith(
+  () => assertHostCompatible({ version: '0.2.0-rc.1' }),
+  ['< 0.1.6'],
+  'later lines are refused (the ceiling is not a 0.1.x special case)',
+);
+
 console.log('\n[assertHostCompatible: escape hatch]');
 process.env.OMDS_ALLOW_OLD_HOST = '1';
 try {
-  check(assertHostCompatible({ version: '0.1.1' }) === undefined, 'OMDS_ALLOW_OLD_HOST=1 disables the gate');
+  check(assertHostCompatible({ version: '0.1.1' }) === undefined, 'OMDS_ALLOW_OLD_HOST=1 disables the floor');
+  let ceilingHeld = false;
+  try { assertHostCompatible({ version: '0.1.7-rc.2' }); } catch { ceilingHeld = true; }
+  check(ceilingHeld, 'the floor hatch does NOT waive the ceiling (one hatch per direction)');
 } finally {
   delete process.env.OMDS_ALLOW_OLD_HOST;
+}
+process.env.OMDS_ALLOW_NEW_HOST = '1';
+try {
+  check(assertHostCompatible({ version: '0.1.7-rc.2' }) === undefined, 'OMDS_ALLOW_NEW_HOST=1 disables the ceiling (probe work)');
+} finally {
+  delete process.env.OMDS_ALLOW_NEW_HOST;
 }
 throwsWith(
   () => assertHostCompatible({ version: '0.1.1' }),
@@ -98,13 +143,14 @@ if (detected !== undefined) {
   check(compareSemver(detected, '0.0.1') > 0, `detected host version "${detected}" parses as a semver`);
 }
 
-console.log('\n[exported floor matches the release policy]');
+console.log('\n[exported bounds match the release policy]');
 check(MIN_HOST_VERSION === '0.1.2-rc.1', 'MIN_HOST_VERSION is 0.1.2-rc.1');
+check(MAX_HOST_VERSION_EXCLUSIVE === '0.1.6', 'MAX_HOST_VERSION_EXCLUSIVE is 0.1.6 (the declarative-preset line starts at 0.1.7)');
 const pkg = JSON.parse(readFileSync(new URL('../npm-package/package.json', import.meta.url), 'utf8'));
-check(pkg.engines?.dsh === '>=0.1.2-rc.1 <0.2.0', 'npm engines.dsh declares the same floor');
+check(pkg.engines?.dsh === `>=${MIN_HOST_VERSION} <${MAX_HOST_VERSION_EXCLUSIVE}`, 'npm engines.dsh declares the same range');
 for (const [name, range] of Object.entries(pkg.peerDependencies ?? {})) {
-  const floor = name === '@deepseek-ai/schemastery' ? '>=0.1.0-rc.7' : '>=0.1.2-rc.1';
-  check(range.includes(floor), `peer ${name} declares its compatibility floor (${floor})`);
+  const floor = name === '@deepseek-ai/schemastery' ? '>=0.1.0-rc.7' : `>=${MIN_HOST_VERSION} <${MAX_HOST_VERSION_EXCLUSIVE}`;
+  check(range.includes(floor), `peer ${name} declares its compatibility range (${floor})`);
   check(pkg.peerDependenciesMeta?.[name]?.optional === true, `peer ${name} is optional (pnpm auto-install must never pull host packages)`);
 }
 

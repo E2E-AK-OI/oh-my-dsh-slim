@@ -4,6 +4,37 @@ All notable changes to oh-my-dsh-slim. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions match npm
 package releases where applicable.
 
+## [0.5.3] — 2026-09-28
+
+> **Supported DSH: 0.1.2-rc.1 … 0.1.5-rc.2** — both host lines are verified end to end.
+> **DSH 0.1.6 and newer are refused** (see below): 0.1.7 replaced directory agent presets with
+> declarative ones, which this release does not implement yet.
+> **Upgrading requires a DSH restart** (plugin code mounts once per host process).
+
+### Changed
+
+- **DSH 0.1.6 and newer are refused up front (ceiling added).** DSH 0.1.7 replaced directory agent
+  presets with **declarative** ones declared by plugin bundles, and the host design explicitly
+  rejected keeping both sources ("preset 不再有独立路径"). This preset line delivers a directory
+  preset, so on such a host it would install cleanly and then never appear — a silent no-op. The
+  host gate now carries a ceiling beside its floor — the whole 0.1.6 line is refused, prereleases
+  included, since it was never verified: plugin rows refuse to mount, the seeder seeds nothing and
+  leaves existing files untouched, and the reason plus the fix appears on the
+  **oh-my-dsh-slim-compat** settings page. `engines.dsh` and the optional peer ranges were
+  tightened to match. A release for the declarative preset model is in development; compatibility
+  probing on a newer host can set `OMDS_ALLOW_NEW_HOST=1`.
+
+### Fixed
+
+- **A prerelease → release upgrade now re-seeds the bundled preset directory.** The seeder decided
+  with its own `compareVersions` that parsed only major.minor.patch, so a marker left at `<v>-0` by
+  a local transition package compared EQUAL to the released `<v>` and the "up to date" branch won.
+  On 2026-09-18 that was cosmetic (the directory's code was byte-identical to the release; only its
+  docs and version strings lagged), but an rc→final step that carries changes would have left the
+  preset directory silently on the older plugin code while the package reported the new version.
+  The decision now uses the prerelease-aware `compareSemver` the seeder already imports for the DSH
+  floor, and `test-preset-seeder` covers the prerelease case.
+
 ## [0.5.2] — 2026-09-18
 
 > **Supported DSH: 0.1.2-rc.1 … 0.1.5-rc.2** — both host lines are verified end to end

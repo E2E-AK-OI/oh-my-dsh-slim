@@ -184,13 +184,20 @@ if (guardWired === guardedRows.length) pass(`host gate wired in all ${guardedRow
 const npmPkgPath = join(root, 'npm-package', 'package.json');
 if (existsSync(npmPkgPath)) {
   const npmPkg = JSON.parse(readFileSync(npmPkgPath, 'utf8'));
-  if (npmPkg.engines?.dsh === '>=0.1.2-rc.1 <0.2.0') pass('npm engines.dsh declares the supported host floor');
-  else fail('npm engines.dsh missing or wrong');
+  // The manifest range must match the gate the plugins actually enforce, or it
+  // would advertise hosts the code refuses (or vice versa) — the ceiling was
+  // added 2026-09-28 for DSH 0.1.7's declarative presets.
+  const gateSrc = readFileSync(join(presetDir, 'host-version.js'), 'utf8');
+  const gateFloor = gateSrc.match(/MIN_HOST_VERSION = '([^']+)'/)?.[1];
+  const gateCeiling = gateSrc.match(/MAX_HOST_VERSION_EXCLUSIVE = '([^']+)'/)?.[1];
+  const expectedRange = `>=${gateFloor} <${gateCeiling}`;
+  if (npmPkg.engines?.dsh === expectedRange) pass(`npm engines.dsh matches host-version.js (${expectedRange})`);
+  else fail(`npm engines.dsh is ${String(npmPkg.engines?.dsh)} but host-version.js says ${expectedRange}`);
   const peers = npmPkg.peerDependencies ?? {};
   const requiredPeers = ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-subagent', '@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-mcp-client'];
-  const missing = requiredPeers.filter((name) => !String(peers[name] ?? '').includes('>=0.1.2-rc.1'));
-  if (missing.length === 0) pass('npm peerDependencies declare the DSH floor for every touched host package');
-  else fail(`peerDependencies missing the DSH floor: ${missing.join(', ')}`);
+  const missing = requiredPeers.filter((name) => !String(peers[name] ?? '').includes(expectedRange));
+  if (missing.length === 0) pass('npm peerDependencies declare the full DSH range for every touched host package');
+  else fail(`peerDependencies missing the DSH range: ${missing.join(', ')}`);
 }
 
 console.log(failures === 0 ? '\nT0: ALL CHECKS PASSED' : `\nT0: ${failures} CHECK(S) FAILED`);

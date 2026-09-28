@@ -17,6 +17,13 @@ subagent delegation for [DeepSeek Harness](https://github.com/deepseek-ai/deepse
 > **Upgrading requires a DSH restart** (plugin code is mounted once per host process; new sessions
 > alone do not pick it up).
 >
+> **⛔ DSH 0.1.6 and newer — including the whole 0.1.7 line — are not supported by this release.**
+> DSH 0.1.7 replaced directory agent presets with **declarative** ones declared by plugin bundles,
+> so this preset would install and then never appear. The plugin refuses that host up front, seeds
+> nothing, leaves your files alone, and explains itself on the
+> **Settings → Plugins → oh-my-dsh-slim-compat** page. Stay on DSH ≤ 0.1.5-rc.2 for now; a release
+> for the declarative preset model is in development.
+>
 > **Coming from 0.5.0 on DSH 0.1.5**: the built-in preset repairs itself (the package re-seeds it),
 > but a **custom configuration** keeps its directory content. If DSH 0.1.5 cannot mount one, the
 > settings card now marks that configuration and repairs it in place with one click, keeping a
@@ -63,8 +70,9 @@ waking it** (zero extra model turns).
 ## Install
 
 Requires **DSH 0.1.2-rc.1 through 0.1.5-rc.2** (both verified) and a DeepSeek API key (default
-models route through deepseek-official). Older DSH releases are **not supported by 0.5.2** — on
-DSH 0.1.1 or below use oh-my-dsh-slim 0.4.0 (see the version note at the top).
+models route through deepseek-official). Hosts outside that range are **not supported by 0.5.2** —
+on DSH 0.1.1 or below use oh-my-dsh-slim 0.4.0, and on **DSH 0.1.6 or newer (the 0.1.7 declarative
+preset line)** wait for the upcoming release (see the version note at the top).
 
 **Option A — plugin marketplace GUI (recommended):** open **Settings → Plugins** in the DSH web
 GUI, search for `oh-my-dsh-slim` in the marketplace, and install. It is also listed in the

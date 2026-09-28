@@ -9,6 +9,7 @@
 | 测试 | 覆盖 |
 |---|---|
 | `node scripts/t0-validate.mjs .` | 静态守卫：组合 YAML 形状/6 角色/运行参数不进 YAML、defaults 语义、插件源码特征（web_fetch 禁用、zsh 超时、observer 软禁用等）、persona 词表、三份组合同步 |
+| `node scripts/test-host-version.mjs` | 宿主版本门禁：prerelease 语义、地板（0.1.2-rc.1）**与上限（0.1.6，0.1.7 声明式 preset 线）**、fail-open、两个方向的逃生开关互不豁免、`engines.dsh`/peers 与 `host-version.js` 范围一致 |
 | `node scripts/test-config-loader.mjs` | 用户配置按 roleId 合并 + 隐藏运行期默认值 + **effort token 形状校验**（接受 xhigh/minimal 等目录档位、拒绝空串/空格/非法字符/超长/非字符串） |
 | `node scripts/test-effort-plugin.mjs` | effort 矩阵/fallback/顶层 temperature 规则（桩 agent/request）+ **档位按模型声明校验**（resolveModel 桩：声明内注入、判决缓存、越界报错含档位清单、三类 fail-open、未判定的键不被粘性缓存） |
 | `node scripts/test-role-subagent.mjs` | 角色工具注册契约、JSON 驱动参数、toolFilter、scoped MCP、前台透明 note |
@@ -17,7 +18,7 @@
 | `node scripts/test-early-close-context.mjs` | ECC 分类/账本状态机/渲染/live 时序用例（桩） |
 | `node scripts/test-settings-schema.mjs` | settings ns schema（真 schemastery）+ 值域 + defaults 互检 + **effort 形状**（xhigh 通过、畸形值拒绝） |
 | `node scripts/test-client-card.mjs` | GUI 卡 client bundle（mock window/react）注册契约/degrade/write-planner + **model-scoped effort（flash+medium 回归：选项按 catalog、none 置顶、mismatch 拦截）** + **交叉断言：catalog 给出的每个档位都能过 `validateConfigDocument`（UI 与写入侧的不变量）** |
-| `node scripts/test-preset-seeder.mjs` | npm seeder 状态机全分支（真 temp dir） |
+| `node scripts/test-preset-seeder.mjs` | npm seeder 状态机全分支（真 temp dir）：fresh/manual/git-managed/升级/降级/不可解析 JSON/schema 拒绝/**预发布标记（`<v>-0`）→ 重播种**（2026-09-18 回归） |
 | `node scripts/test-profile-rpc.mjs` | /omds profile 端点全路径（mock roster + 真 temp dir） |
 | `node scripts/test-omds-rpc.mjs` | /**omds 传输层**契约（真 webServer 桩）：注册形态（`/omds` 前缀路由）、信任栅栏、连接信封（rpcId 回显 / ok-value / 错误码 + `details` 记录）。回归目标：2026-09-10 的 `connection.rpc.handle` 静默失效 |
 
@@ -70,6 +71,18 @@ runner 运行时替换（直接拷贝 overlay 单跑前必须自行替换 token�
 
 ## 修订记录
 
+- 2026-09-28：**宿主版本上限护栏**（`host-version.js` 增 `MAX_HOST_VERSION_EXCLUSIVE = '0.1.6'`，
+  应对 DSH 0.1.7 的声明式 preset 断代，详见 HANDOFF §4D）。上限按**核心版本行**判定（0.1.6 的
+  alpha/rc/正式版一律拒绝）——首版用完整 semver 曾让 `0.1.6-alpha.1` 溜过，由负向用例当场抓出并
+  修正。`test-host-version` 增上限用例（0.1.6-alpha.1 / 0.1.6-rc.1 / 0.1.6 / 0.1.7-rc.2 /
+  0.2.0-rc.1 全部拒绝，0.1.5 线放行，floor 开关不豁免上限，`OMDS_ALLOW_NEW_HOST` 可豁免）；
+  `test-preset-seeder` 增"超出上限的宿主：不播种、既有目录不动、注册说明页、不接 /omds"；T0 增
+  "`engines.dsh`/peers 范围与 `host-version.js` 两界限一致"的交叉断言。电池在真 0.1.5-rc.2 上复跑
+  9/9，确认上限不误伤支持范围内的宿主；部署后产物的 `assertHostCompatible` 也在生产包上实测过拒绝行为。
+- 2026-09-18（D）：**播种器预发布判据修复**（`npm-package/lib/index.js`：标记比较改用预发布感知的
+  `compareSemver`）。`test-preset-seeder` 增"标记 `<v>-0` + 包 `<v>` → 必须重播种（带备份）"用例，
+  修复前先跑出 3 项 FAIL 作为负向证据。判据类改动属契约面，故复跑 L1 电池（含 `profile-snapshots`
+  的 seeder 阶段）与 web 探针（真宿主 boot 时执行播种器）。
 - 2026-09-18（C）：**验证"已部署产物"的配方**（本地部署后、发布前）：① `probe-omds-web.mjs
   --preset-pkg <已安装包目录>` 用真实宿主验证该包能挂载并服务 `/omds`；② `run-host-probes.mjs
   --preset <生产预设目录>` 验证某个具体配置目录（含自定义配置）的挂载与 effort 注入链。两者都是

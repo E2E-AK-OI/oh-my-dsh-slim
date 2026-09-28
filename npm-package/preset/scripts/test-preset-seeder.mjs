@@ -212,6 +212,29 @@ console.log('\n[up-to-date: same version untouched]');
   rmSync(home, { recursive: true, force: true });
 }
 
+console.log('\n[upgrade: prerelease marker of the same core version → backup + re-seed]');
+{
+  // Regression (found 2026-09-18): the seeding decision used a local
+  // compareVersions that parsed only major.minor.patch, so `<v>-0` and `<v>`
+  // compared EQUAL and the "up to date" branch won — a prerelease→release step
+  // never re-seeded. Installing a local transition package (0.5.2-0 → the
+  // published 0.5.2) therefore left the preset directory on the prerelease
+  // content: harmless that day (code identical), silently stale plugin code the
+  // day an rc→final step carries changes.
+  const home = makeHome('prerelease');
+  const dir = presetDir(home);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, '.omds-seed.json'), JSON.stringify({ seededVersion: `${BUNDLED_VERSION}-0` }));
+  writeFileSync(join(dir, 'sentinel.txt'), 'prerelease content');
+  process.env.DSH_HOME = home;
+  const logs = runSeeder(home);
+  check(markerOf(home)?.seededVersion === BUNDLED_VERSION,
+    `prerelease marker ${BUNDLED_VERSION}-0 → re-seeded to ${BUNDLED_VERSION} (got ${markerOf(home)?.seededVersion})`);
+  check(!existsSync(join(dir, 'sentinel.txt')), 'prerelease preset directory replaced with the bundled content');
+  check(logs.warn.some((m) => m.includes('upgraded')), 'logs the upgrade away from the prerelease marker');
+  rmSync(home, { recursive: true, force: true });
+}
+
 console.log('\n[downgrade protection: newer marker untouched]');
 {
   const home = makeHome('downgrade');
@@ -327,6 +350,42 @@ console.log('\n[old host: fresh home → seeding skipped, settings channel kept,
   check(await waitForRegistration(service), 'settings namespace still registered (bundled 0.4.0 preset keeps its channel)');
   check(await waitForRegistration(service, 2000, 'oh-my-dsh-slim-compat'), 'compatibility banner page registered');
   check(!runSeeder.lastInjectedDeps.some((d) => d.includes('agentPresets')), 'no /omds wiring on an old host');
+  rmSync(home, { recursive: true, force: true });
+}
+
+console.log('\n[too-new host (0.1.7 declarative presets): no seeding, banner page, no /omds]');
+{
+  // 2026-09-28: 0.1.7 dropped directory presets for declarative ones declared by
+  // plugin bundles. Seeding there would write a directory nobody reads — a
+  // silent no-op — so the seeder must stay inert and say why.
+  const home = makeHome('newhost-fresh');
+  process.env.DSH_HOME = home;
+  const service = makeSettingsService();
+  const logs = runSeeder(home, { settings: service, hostVersion: '0.1.7-rc.2' });
+  check(!existsSync(join(home, '.agent-presets', 'oh-my-dsh-slim')), 'preset directory NOT created above the ceiling');
+  check(
+    logs.warn.some((m) => m.includes('< 0.1.6') && m.includes('0.1.7-rc.2') && m.includes('0.1.5-rc.2')),
+    'warns with the ceiling, the found version and the fix',
+  );
+  check(await waitForRegistration(service), 'settings namespace still registered (existing preset keeps its channel)');
+  check(await waitForRegistration(service, 2000, 'oh-my-dsh-slim-compat'), 'compatibility banner page registered');
+  check(!runSeeder.lastInjectedDeps.some((d) => d.includes('agentPresets')), 'no /omds wiring above the ceiling');
+  rmSync(home, { recursive: true, force: true });
+}
+
+console.log('\n[too-new host: an existing preset directory is left untouched]');
+{
+  const home = makeHome('newhost-marker');
+  const dir = presetDir(home);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, '.omds-seed.json'), JSON.stringify({ seededVersion: '0.1.0' }));
+  writeFileSync(join(dir, 'sentinel.txt'), 'older content');
+  process.env.DSH_HOME = home;
+  runSeeder(home, { hostVersion: '0.1.7-rc.2' });
+  check(readFileSync(join(dir, 'sentinel.txt'), 'utf8') === 'older content', 'existing preset untouched above the ceiling');
+  check(markerOf(home)?.seededVersion === '0.1.0', 'marker unchanged (no re-seed attempt)');
+  const siblings = readdirSync(join(home, '.agent-presets'));
+  check(!siblings.some((n) => n.includes('.bak-')), 'no backup directories created');
   rmSync(home, { recursive: true, force: true });
 }
 

@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 
 import { SETTINGS_NS, buildSettingsSchema } from '../preset/settings-schema.js';
 import { validateConfigDocument } from '../preset/config-loader.js';
-import { MIN_HOST_VERSION, compareSemver, detectHostDshVersion } from '../preset/host-version.js';
+import { MIN_HOST_VERSION, MAX_HOST_VERSION_EXCLUSIVE, compareSemver, detectHostDshVersion } from '../preset/host-version.js';
 
 export const name = 'omds-preset-seeder';
 
@@ -452,15 +452,6 @@ function resolveHome() {
   return env !== undefined && env.trim() !== '' ? env : join(homedir(), '.dsh');
 }
 
-function compareVersions(a, b) {
-  const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < 3; i++) {
-    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
-  }
-  return 0;
-}
-
 function stamp() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -627,13 +618,17 @@ function wireOmdsRpc(ctx, log) {
   });
 }
 
-// Old-host compatibility notice: when the running DSH predates this
-// release's floor, the seeder must stay fully inert (no seeding, no /omds —
-// the native authoring API does not exist there) but the user's existing
-// preset and its settings channel keep working. The only user-visible
-// surface we still own is a dedicated settings page that states the
-// situation and the fix — never the boot log alone.
-async function wireCompatNotice(ctx, log, hostVersion) {
+// Host compatibility notice: when the running DSH is outside this release's
+// supported range, the seeder must stay fully inert (no seeding, no /omds) but
+// the user's existing preset and its settings channel keep working. The only
+// user-visible surface we still own is a dedicated settings page that states
+// the situation and the fix — never the boot log alone.
+//
+// Two directions, deliberately different texts: too old (the native authoring
+// API does not exist there) and too new (0.1.7 dropped directory presets, so
+// seeding would be a silent no-op — the write lands in a directory nobody
+// reads).
+async function wireCompatNotice(ctx, log, hostVersion, reason) {
   let z;
   try {
     z = (await import('@deepseek-ai/schemastery')).default;
@@ -643,12 +638,18 @@ async function wireCompatNotice(ctx, log, hostVersion) {
   }
   ctx.inject(['settings'], (sctx) => {
     try {
-      const banner = z.object({}).description(
-        `oh-my-dsh-slim v${bundledVersion} requires DSH >= ${MIN_HOST_VERSION} ` +
-        `(this host: DSH ${hostVersion}). The plugin did NOT touch your preset ` +
-        'directory — your existing oh-my-dsh-slim preset stays usable as-is. ' +
-        'Fix: upgrade DSH to 0.1.2-rc.1 or newer, or install oh-my-dsh-slim@0.4.0.',
-      );
+      const text = reason === 'too-new'
+        ? `oh-my-dsh-slim v${bundledVersion} supports DSH < ${MAX_HOST_VERSION_EXCLUSIVE} ` +
+          `(this host: DSH ${hostVersion}). DSH 0.1.7 replaced directory agent presets with ` +
+          'declarative ones declared by plugin bundles, so this release would install and then ' +
+          'never appear — nothing was seeded and your existing preset was left untouched. ' +
+          'Fix: stay on DSH <= 0.1.5-rc.2 (the latest verified host) with oh-my-dsh-slim 0.5.x; ' +
+          'a release supporting the declarative model is in development.'
+        : `oh-my-dsh-slim v${bundledVersion} requires DSH >= ${MIN_HOST_VERSION} ` +
+          `(this host: DSH ${hostVersion}). The plugin did NOT touch your preset ` +
+          'directory — your existing oh-my-dsh-slim preset stays usable as-is. ' +
+          'Fix: upgrade DSH to 0.1.2-rc.1 or newer, or install oh-my-dsh-slim@0.4.0.';
+      const banner = z.object({}).description(text);
       sctx.settings.register('oh-my-dsh-slim-compat', banner, { base: {} });
       log.warn('omds-preset-seeder: compatibility notice page registered (Settings → Plugins → oh-my-dsh-slim-compat)');
     } catch (error) {
@@ -663,23 +664,34 @@ export function apply(ctx, options = {}) {
     warn: (message) => ctx.logger?.warn?.(message),
     error: (message) => ctx.logger?.error?.(message),
   };
-  // Host compatibility gate (0.1.2 changed the APIs this release needs).
-  // Undetectable version fails open — an unusual layout is not proof of an
-  // old host, and guessing would break valid setups. In degraded mode:
-  // seeding and the /omds RPC stay off, the existing preset directory is
+  // Host compatibility gate (0.1.2 changed the APIs this release needs; 0.1.7
+  // replaced directory presets, so this release must not pretend to work
+  // there). Undetectable version fails open — an unusual layout is not proof
+  // of an unsupported host, and guessing would break valid setups. In degraded
+  // mode: seeding and the /omds RPC stay off, the existing preset directory is
   // never touched, and the settings namespace still registers so a bundled
   // 0.4.0 preset keeps its configuration channel.
   const hostVersion = options.hostVersion ?? detectHostDshVersion();
   const hostTooOld = hostVersion !== undefined && compareSemver(hostVersion, MIN_HOST_VERSION) < 0;
+  // 0.1.7 dropped directory presets: seeding would write a directory nobody
+  // reads (a silent no-op), so refuse with an explanation instead.
+  const hostTooNew = hostVersion !== undefined && compareSemver(hostVersion, MAX_HOST_VERSION_EXCLUSIVE) >= 0;
   if (hostTooOld) {
     log.warn(
       `omds-preset-seeder: oh-my-dsh-slim v${bundledVersion} requires DSH >= ${MIN_HOST_VERSION} ` +
       `(this host: DSH ${hostVersion}). Your preset directory was left untouched and stays ` +
       'usable as-is. Fix: upgrade DSH to 0.1.2-rc.1 or newer, or install oh-my-dsh-slim@0.4.0.',
     );
+  } else if (hostTooNew) {
+    log.warn(
+      `omds-preset-seeder: oh-my-dsh-slim v${bundledVersion} supports DSH < ${MAX_HOST_VERSION_EXCLUSIVE} ` +
+      `(this host: DSH ${hostVersion}). DSH 0.1.7 replaced directory agent presets with declarative ` +
+      'ones, so this release would install and then never appear; nothing was seeded. ' +
+      'Fix: stay on DSH <= 0.1.5-rc.2 with oh-my-dsh-slim 0.5.x (declarative support is in development).',
+    );
   }
   try {
-    if (hostTooOld) return;
+    if (hostTooOld || hostTooNew) return;
     const target = join(resolveHome(), '.agent-presets', PRESET_DIR_NAME);
 
     if (!existsSync(target)) {
@@ -700,7 +712,12 @@ export function apply(ctx, options = {}) {
       log.warn(`omds-preset-seeder: "${target}" exists without a seed marker (installed manually?); leaving it untouched`);
       return;
     }
-    if (compareVersions(bundledVersion, marker.seededVersion) <= 0) {
+    // Prerelease-aware (host-version.js): a local transition package left the
+    // marker at `<v>-0`, and a major.minor.patch-only comparison called that
+    // equal to `<v>`, so the released content never re-seeded (found 2026-09-18
+    // on 0.5.2-0 → 0.5.2; code happened to be identical, but an rc→final step
+    // carrying changes would have left the directory on stale plugin code).
+    if (compareSemver(bundledVersion, marker.seededVersion) <= 0) {
       log.info(`omds-preset-seeder: preset v${marker.seededVersion} is up to date (bundled v${bundledVersion})`);
       return;
     }
@@ -724,7 +741,8 @@ export function apply(ctx, options = {}) {
     wireSettings(ctx, log).catch((error) => {
       log.warn(`omds-preset-seeder: settings namespace unavailable (${error?.message ?? error}); legacy JSON channel stays active`);
     });
-    if (hostTooOld) wireCompatNotice(ctx, log, hostVersion);
+    if (hostTooOld) wireCompatNotice(ctx, log, hostVersion, 'too-old');
+    else if (hostTooNew) wireCompatNotice(ctx, log, hostVersion, 'too-new');
     else wireOmdsRpc(ctx, log);
   }
 }
