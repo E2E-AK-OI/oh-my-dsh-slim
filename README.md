@@ -3,31 +3,24 @@
 A port of [oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim)'s specialist
 subagent delegation for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH):
 **an orchestrator + 5 specialist roles**, each with its own persona, model, tool permissions
-(toolFilter), reasoning effort, and MCP access. Delivered as a shareable **DSH agent preset**
-(with bundled configuration plugins), not a standalone application.
+(toolFilter), reasoning effort, and MCP access. Delivered as a **declarative DSH agent preset**
+that mounts straight out of the plugin bundle — not a standalone application, and not a directory
+you copy anywhere.
 
 > Persona text adapted from oh-my-opencode-slim (MIT © 2025 alvinunreal), attribution retained —
 > see [LICENSE](./LICENSE). 中文版见 [README.zh.md](./README.zh.md).
 
-> **⚠️ DSH version support (0.5.2)**: **DSH 0.1.2-rc.1 through 0.1.5-rc.2** — both host lines are
-> verified end to end (the 0.1.2 line; the 0.1.5 line on both rc.1 and rc.2). On DSH 0.1.1 or
-> below, stay on oh-my-dsh-slim **0.4.0**: the plugin detects the mismatch, leaves your existing
-> preset directory untouched (it
-> stays fully usable) and shows a notice under **Settings → Plugins → oh-my-dsh-slim-compat**.
-> **Upgrading requires a DSH restart** (plugin code is mounted once per host process; new sessions
-> alone do not pick it up).
+> **⚠️ DSH version support (0.6.0)**: **DSH 0.2.0-rc.2**, verified end to end. DSH 0.2.0 turned
+> agent presets **declarative** — this package now declares its preset from its own bundle patch,
+> and the `$DSH_HOME/.agent-presets/` directory model is gone from the host entirely. **0.6.0
+> needs DSH ≥ 0.2.0-rc.2, and DSH 0.2.0 needs 0.6.0.**
 >
-> **⛔ DSH 0.1.6 and newer — including the whole 0.1.7 line — are not supported by this release.**
-> DSH 0.1.7 replaced directory agent presets with **declarative** ones declared by plugin bundles,
-> so this preset would install and then never appear. The plugin refuses that host up front, seeds
-> nothing, leaves your files alone, and explains itself on the
-> **Settings → Plugins → oh-my-dsh-slim-compat** page. Stay on DSH ≤ 0.1.5-rc.2 for now; a release
-> for the declarative preset model is in development.
+> Staying on an older host? Match the lines: **DSH ≤ 0.1.5-rc.2** → oh-my-dsh-slim **0.5.3** (the
+> directory-preset line). The **0.1.6–0.1.x** line already declares presets by bundle patch but
+> predates the seams this preset uses, so it is not supported either — upgrade to DSH 0.2.0-rc.2.
 >
-> **Coming from 0.5.0 on DSH 0.1.5**: the built-in preset repairs itself (the package re-seeds it),
-> but a **custom configuration** keeps its directory content. If DSH 0.1.5 cannot mount one, the
-> settings card now marks that configuration and repairs it in place with one click, keeping a
-> backup of `agent.cordis.yml` beside it. You can also recreate the configuration instead.
+> **Upgrading requires a DSH restart**: plugin code (tool schemas, tool descriptions, injected
+> reminder strings) mounts once per host process, so new sessions alone still run the old code.
 
 ## What it solves
 
@@ -53,204 +46,187 @@ waking it** (zero extra model turns).
 | Role | Tool | Default model | Effort | Permissions |
 |---|---|---|---|---|
 | oracle | subagent_oracle | deepseek-v4-pro | max | read-only |
-| designer | subagent_designer | deepseek-v4-flash | high | writable |
-| fixer | subagent_fixer | deepseek-v4-flash | high | writable |
-| explorer | subagent_explorer | deepseek-v4-flash | low | read-only |
-| librarian | subagent_librarian | deepseek-v4-flash | high | read-only + MCP |
+| designer | subagent_designer | deepseek-flash | high | writable |
+| fixer | subagent_fixer | deepseek-flash | high | writable |
+| explorer | subagent_explorer | deepseek-flash | low | read-only |
+| librarian | subagent_librarian | deepseek-flash | high | read-only + MCP |
 
-- All roles inherit global tools; read-only roles deny `edit/write`; all roles deny control tools
-  (OMO-style deny-only policy)
-- Roles cannot delegate further (`maxDepth: 1`); librarian exclusively mounts context7/gh_grep in
-  its own child scope
-- **observer (visual analysis) is reserved but disabled in this release**: DSH's send-time gate
-  blocks image attachments based on the *main model's* vision capability, and delegation prompts
-  are text-only, so pasted images cannot reach a subagent yet. It will be re-enabled when the
-  harness supports forwarding message attachments into subagent contexts.
+- All roles inherit the global tools; read-only roles deny `edit`/`write`; every role denies the
+  control tools (`skill`, `job_kill`, `job_list`, `job_output`, `todo_write`,
+  `ask_user_question`) — an OMO-style deny-only policy
+- Roles cannot delegate further (`maxDepth: 1`); only librarian mounts the MCP servers it is
+  configured with
+- **observer (visual analysis) is reserved but force-disabled in this release**: DSH's send-time
+  gate blocks image attachments based on the *main model's* vision capability, and delegation
+  prompts are text-only, so pasted images cannot reach a subagent yet. It will be re-enabled when
+  the harness supports forwarding message attachments into subagent contexts
 
 ## Install
 
-Requires **DSH 0.1.2-rc.1 through 0.1.5-rc.2** (both verified) and a DeepSeek API key (default
-models route through deepseek-official). Hosts outside that range are **not supported by 0.5.2** —
-on DSH 0.1.1 or below use oh-my-dsh-slim 0.4.0, and on **DSH 0.1.6 or newer (the 0.1.7 declarative
-preset line)** wait for the upcoming release (see the version note at the top).
+Requires **DSH 0.2.0-rc.2** and a DeepSeek API key (the shipped role models route through
+`deepseek-official`).
 
-**Option A — plugin marketplace GUI (recommended):** open **Settings → Plugins** in the DSH web
-GUI, search for `oh-my-dsh-slim` in the marketplace, and install. It is also listed in the
-[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) catalog.
-
-**Option B — CLI:**
+**Option A — CLI (the supported path):**
 
 ```bash
-dsh plugin --profile web add oh-my-dsh-slim
+dsh plugin --profile <profile> add oh-my-dsh-slim
 ```
 
-The package ships a seeder that materializes the preset into
-`$DSH_HOME/.agent-presets/oh-my-dsh-slim` automatically (updates come with plugin upgrades;
-your previous copy is backed up).
-
-> ℹ️ This uses the default harness home (`~/.dsh`). If your deployment uses a
-> custom home (e.g. an isolated desktop-app environment), set `DSH_HOME` to it
-> first — the marketplace GUI (Option A) resolves this automatically.
-
-**Option C — git clone:**
+`dsh plugin` is a thin wrapper around pnpm: it installs the package into
+`$DSH_HOME/profiles/<profile>/` and reconciles it into that profile's `dsh.profile.bundles` layer
+list — which is what makes the loader read this package's bundle patch. A local checkout or a git
+URL works just as well, because the underlying command is `pnpm add`:
 
 ```bash
-git clone https://github.com/ninipa/oh-my-dsh-slim "$DSH_HOME/.agent-presets/oh-my-dsh-slim"
+dsh plugin --profile desktop add ./oh-my-dsh-slim              # local path
+dsh plugin --profile desktop add github:ninipa/oh-my-dsh-slim  # git URL
 ```
 
-Done — the preset appears immediately. Create a new session and pick **极简角色委派** in
-**Settings → Agent Presets**.
+Then **restart DSH** and pick **极简角色委派** in **Settings → Agent Presets** when you start a new
+session.
 
-- **Update**: `cd "$DSH_HOME/.agent-presets/oh-my-dsh-slim" && git pull` (or upgrade the plugin),
-  then **restart DSH** — plugin code (tool schemas, injected reminders) is mounted once per host
-  process, so new sessions alone do not load the new code
-- **Rollback**: `git checkout <old-tag>` or just delete the directory. Presets are locked per
-  session at creation time; running sessions are unaffected.
+**Option B — plugin marketplace GUI:** if your DSH ships the plugin marketplace, open
+**Settings → Plugins**, search for `oh-my-dsh-slim`, and install. The plugin is also listed in the
+[awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) catalog. Restart
+DSH afterwards.
+
+- **Update**: `dsh plugin --profile <profile> add oh-my-dsh-slim@latest`, then restart DSH
+- **Uninstall**: `dsh plugin --profile <profile> remove oh-my-dsh-slim`, then restart DSH. There is
+  no seeded directory any more — removing the package removes the preset
+- **Rollback**: install the older package for the older host
+  (`dsh plugin --profile <profile> add oh-my-dsh-slim@0.5.3` restores the directory-preset line
+  for DSH ≤ 0.1.5-rc.2), then restart DSH
+
+> ℹ️ Everything above uses `$DSH_HOME` (default `~/.dsh`). If your deployment uses a custom home
+> (the desktop app uses an isolated one), set `DSH_HOME` before running the CLI.
+
+## How the preset is declared (the 0.2.0 model)
+
+DSH 0.2.0 has no preset directory. An **agent preset** is a loader row of
+`@deepseek-ai/dsh-agent-preset` whose `config.plugins` **is** the preset's plugin list, and a
+package declares one by shipping a **bundle patch**:
+
+- `cordis.patch.yml` (shipped both at the repo root and inside `npm-package/`) inserts two rows:
+  `preset-oh-my-dsh-slim` → `preset/preset.js`, and `omds-seeder` → `lib/index.js`
+- `preset/preset.js` registers
+  `{ id: 'oh-my-dsh-slim', name: '极简角色委派', order: 20, plugins: [...] }` — 19 top-level rows
+  covering the six role tools, the orchestrator persona, the planning and compaction rows, and a
+  `delegation` group
+- the five package-local rows (`roles.js`, `subagent-result.js`, `subagent-roles.js`,
+  `early-close-context.js`, `sandbox-strip.js`) are referenced by **absolute `file:` URLs built
+  from `import.meta.url`**, never by relative paths: a row name resolves against the *declaring
+  patch's* `baseUrl`, so a `./roles.js` row audits as "never started" and silently does nothing
+- two rows are conditional: `tool-pwsh` is disabled off Windows, and `tool-plugin-manager` is
+  disabled when the profile has no `profileContext` service
+
+`lib/index.js` (`omds-seeder`) is the bundle's companion row, mounted in the *profile* plane. It
+only reports: the preset it declared, the running host version and verdict, the role tools it
+registered, and one line summarising the effective configuration. Mounting `{ verbose: true }` on
+that row also logs the per-role table. A row that throws aborts the whole preset mount, so this
+probe never gets to be fatal.
+
+> The preset registry "neither scans directories nor accepts preset paths", so nothing is copied
+> into `$DSH_HOME` and nothing needs cleaning up on uninstall.
 
 ## Configuration
 
-Zero configuration required (sensible defaults ship with the preset). User intent is read in
-descending priority:
+Zero configuration is required — the shipped defaults travel with the package. User intent is read
+in descending priority, and every channel shares one document shape and one merge rule (**user
+values win key by key; arrays replace whole**):
 
-1. The file pointed to by the `OH_MY_DSH_SLIM_CONFIG` env var (test/CI channel)
-2. **The host settings namespace `oh-my-dsh-slim`** (recommended): the bundled seeder registers
-   this namespace, so configuration lives under the `oh-my-dsh-slim:` section of the host's
-   `settings.yaml`. Effort/temperature are re-read on every delegation (edits apply immediately);
-   model/maxTokens apply to new sessions
-3. The legacy `$DSH_HOME/oh-my-dsh-slim.json` file (fallback for hosts without a settings
-   service). On hosts with the npm package installed, the file is imported into the settings
-   namespace on first boot and archived as `oh-my-dsh-slim.json.imported-<timestamp>`
-
-All three channels share one document shape (schema:
-[oh-my-dsh-slim.schema.json](./oh-my-dsh-slim.schema.json)):
+1. The file named by the `OH_MY_DSH_SLIM_CONFIG` env var (test/CI channel)
+2. `profile.json` beside the mounted preset copy (per-profile snapshot)
+3. `$DSH_HOME/oh-my-dsh-slim.json` (the documented user file)
+4. `defaults.json` bundled with the package (the lowest-priority layer, always present)
 
 ```json
 {
   "preset": "my-dsh-normal",
+  "mcpServers": {
+    "context7": { "transport": "streamable-http", "url": "https://mcp.context7.com/mcp" },
+    "gh_grep": { "transport": "streamable-http", "url": "https://mcp.grep.app" }
+  },
   "presets": {
     "my-dsh-normal": {
-      "fixer": { "model": "kimi-k3", "effort": "high" },
+      "fixer": { "model": "deepseek-flash", "effort": "high" },
       "librarian": { "mcps": ["context7", "gh_grep"] }
     }
   }
 }
 ```
 
-- Per-role overrides: `enabled` / `model` / `effort` / `deny` / `mcps`; `temperature` / `maxTokens`
-  are advanced keys (`advanced.roles.<roleId>`)
-- **Effort vocabulary**: `none` omits the `reasoningEffort` parameter entirely — for models that
-  do not support effort control (e.g. local LLMs without a reasoning-effort field); `off`
-  explicitly disables reasoning on models that support the parameter. Other levels
-  (`low`/`medium`/`high`/`max`/`xhigh` …) are **model-scoped** and open-ended: each adapter owns
-  its own ids, so the configuration accepts any well-formed effort token (a token you can save on
-  this machine stays valid when the config moves to another one) and the check against the chosen
-  model happens at delegation time. An unsupported level fails loudly on the first delegation,
-  naming the levels that model declares and its adapter default. The GUI card's effort dropdown is
-  built from each model's declared set, and an explicit out-of-set value gets an inline warning
-  that blocks saving.
-- **Model validation**: at delegation time the configured model id is checked against the
-  providers you imported in **Settings → Models**. An unknown model fails loud on the first
-  delegation, listing every imported model (including the vision-capable subset) — no silent
-  breakage
-- **observer is locked**: `observer.enabled: true` is ignored with a warning (see above)
-- Changes take effect in **new sessions**; running sessions are unaffected
+A compact `roles` map is accepted as well, and wins over `presets[<name>]`:
 
-**GUI card** (ships with the npm package): after install, a card appears under
-**Settings → Plugins → Plugin configuration** — per-role toggle/model/effort editable inline,
-advanced maxTokens/temperature behind a warning sub-section, and a model dropdown sourced from
-the same catalog as the composer's picker. The **effort dropdown is scoped to the selected
-model's declared reasoning efforts** (unsupported levels are hidden; an explicit mismatch warns
-inline and blocks save). The orchestrator row is informational only: it is the
-session's main model, changed in the composer's picker (defaults under Settings → Models). Saving
-reports which changes apply immediately (effort/temperature) and which start with new sessions.
-
-**Conversational configuration** (no JSON editing needed): just say e.g. "change fixer's model to
-kimi-k3" or "disable the oracle role" — the orchestrator edits the JSON per the schema.
-
-**Multiple configurations (multi-preset)**: the settings card has a **Delegation configuration**
-dropdown on top (it appears when the seeder is installed — its `/omds` RPC feeds the roster). It
-manages named configurations, each backed by its own native agent preset:
-
-- The dropdown always lists **极简角色委派 / Minimal Role Delegation** (the bundled profile — the
-  new-session default until you change it) plus **＋ New configuration**. Choosing "＋ New
-  configuration" edits an **in-place draft** copied from the configuration you were just editing:
-  nothing is written until you hit **Save**, which then asks only for a **display name** (the
-  internal id is generated from the name and never changes afterwards).
-- **Restore defaults** resets only what you are currently editing; it never deletes a configuration
-  or clears the roster.
-- Selecting a configuration only chooses **what is edited** — the current session never switches.
-  Which configuration a NEW session uses is decided by the native **Agent preset** picker and its
-  default; the card's **Set as default for new sessions** button writes exactly that native
-  setting, so the card and the picker always agree (clicking a preset card in the picker is the
-  same write).
-- Saved configurations become real agent presets: directories under
-  `$DSH_HOME/.agent-presets/profile-<prefix>-<hash>/`, selectable in the Agent preset picker like
-  any other preset. Each profile's per-role settings are stored as its own snapshot
-  (`profile.json` beside the preset composition), which is how two profiles never leak into each
-  other.
-
-## web_fetch (follows the host)
-
-Since host DSH 0.1.2 the harness itself ships `web_fetch` with built-in SSRF protection,
-enabled by default for every session and every delegated child. This preset no longer wires its
-own fetch provider or exposes a `webFetch` switch: the previous "advanced configuration" section
-and the `web-fetch-gate` plugin were retired. `web_search` remains available from the host web
-service.
-
-## Roadmap
-
-- **observer re-enable** — waiting on upstream DSH support for forwarding message attachments
-  into subagent contexts (see the role matrix note above).
-
-## Self-tests & probes (all zero-cost)
-
-```bash
-# Static validation (structure / keys / persona dead-references / soft-disable assertions)
-node scripts/t0-validate.mjs .
-
-# Unit tests (config merge / effort injection / delegation contract / subagent_result /
-# settings schema / sandbox strip / early-close ledger / preset seeder / profile RPC /
-# /omds RPC transport / client card)
-node scripts/test-config-loader.mjs && node scripts/test-effort-plugin.mjs
-node scripts/test-role-subagent.mjs && node scripts/test-subagent-result.mjs
-node scripts/test-settings-schema.mjs && node scripts/test-sandbox-strip.mjs
-node scripts/test-early-close-context.mjs && node scripts/test-preset-seeder.mjs
-node scripts/test-profile-rpc.mjs && node scripts/test-client-card.mjs
-node scripts/test-omds-rpc.mjs && node scripts/test-host-version.mjs
-
-# Host-contract probe battery (9 probes / 10 phases, zero-model) — run after every DSH upgrade.
-# Bootstraps a scratch DSH_HOME automatically (no credentials needed); see scripts/TEST-INVENTORY.md
-node scripts/run-host-probes.mjs          # --list / --only <name> / --keep for options
-
-# Web-mode transport probe (zero-model): boots a real web host and checks the card's /omds
-# channel (registration, trust fence, envelope, the one-click configuration migration).
-# `--dsh <install-dir>` points it at another host version for a cross-version check.
-node scripts/probe-omds-web.mjs
-
-# Real-model acceptance (billable): builds a scratch home routing the parent AND every role at
-# ONE model, then runs the isolated smoke + the ECC settlement probe.
-# The model is a flag: --provider/--model/--effort (default opencode-ds-v41-flash/deepseek-flash @ low)
-node scripts/run-real-models.mjs
+```json
+{
+  "preset": "my-dsh-normal",
+  "roles": {
+    "oracle": { "model": "deepseek-v4-pro", "effort": "max" },
+    "explorer": { "enabled": false }
+  }
+}
 ```
 
-## Acceptance checklist
+- Per-role keys: `enabled`, `provider`, `model`, `effort`, `temperature`, `maxTokens`, `tools`,
+  `deny`, `mcps`. `tools` is an exhaustive allow list (`tools.restrict()` semantics); an empty
+  list means the same as "not configured", but a non-empty one must name known global tools.
+  `advanced.roles.<roleId>` merges last, on top of everything else
+- **Effort values are shape-checked, not vocabulary-checked.** The shipped vocabulary is
+  `off`/`low`/`high`/`max`, but effort ids are adapter-owned and open-ended, so any well-formed
+  token (letters, then letters/digits/`-`/`_`) is accepted and stays valid when the config moves to
+  another machine. Whether the chosen model actually offers it is answered at delegation time by
+  `omds-subagent-roles`, which asks `llm.resolveModelInfo` and fails with a readable error naming
+  the model's declared efforts and its adapter default. `none` is not a token: a role with no
+  `effort` simply inherits whatever the host resolved
+- **Model validation happens at delegation time**: an unknown provider/model is reported by the
+  host rather than silently ignored
+- An unreadable or invalid configuration is **never fatal** — the row logs a warning and leaves the
+  host's own defaults in place
+- **observer is locked**: `observer.enabled: true` is ignored with a warning (see the role matrix)
+- `model` / `maxTokens` / `tools` / `deny` / `mcps` are read when the preset mounts (per session);
+  `effort` and `temperature` are re-read on **every** delegated request, so those two take effect
+  on the next delegation even inside a session that is already running
 
-[GUI-TEST-TASKS.md](./GUI-TEST-TASKS.md) provides 7 non-explicit-dispatch scenarios (prompts +
-expected behavior) for verifying a fresh deployment. T3 uses the baseline project under
-[examples/omo-probe-baseline](./examples/omo-probe-baseline).
+**Conversational configuration** (no JSON editing needed): just say e.g. "change fixer's model to
+deepseek-v4-pro" or "disable the oracle role" — the orchestrator edits the configuration document
+for you.
+
+## Self-tests
+
+```bash
+npm test
+```
+
+`node --test test/package.test.mjs` — eight structural tests that need no DSH install and cost
+nothing:
+
+- the two bundle patches agree on every row id and field
+- the patch declares exactly one `@deepseek-ai/dsh-agent-preset` row, and it points at
+  `preset/preset.js`
+- **no preset row may name a relative path** — the regression guard for the "never started"
+  failure described above; every package-local row resolves to an existing absolute `file:` URL
+  under `npm-package/preset/` and is not YAML
+- the six role rows are found through the shared `roles.js` URL, and their personas round-trip
+  through `composeRolePersona` → `roleIdFromEvents`; each advertises its own `toolName`
+- the role wrapper declares the five services the delegated host implementation needs, and the
+  stock-shaped config it hands back keeps `toolName` and the persona and leaks no `definition`
+- the bundled `defaults.json` reaches every role even with **no** user config file present
+- a *partial* user override keeps the shipped `provider`, `effort`, `deny` and `maxTokens`
+- every role carries its shipped route into the host's `agentOptions`
+  (`provider`/`model`/`reasoningEffort`/`maxTokens`/`toolFilter`)
 
 ## Known limits
 
-- **Upgrading requires a DSH restart**: the agent-plane composition mounts **once per host
-  process** — config rows (persona text, model routes) re-resolve per session, but plugin code
-  (tool schemas, tool descriptions, injected reminder strings) is frozen in-process. After any
-  plugin/preset upgrade, restart DSH; new sessions alone still run the old code
-- **Non-vision main models cannot receive pasted images**: DSH blocks image attachments
-  at send time based on the main model's capability (`MODEL_DOES_NOT_SUPPORT_IMAGES`). For image
-  analysis, use a vision-capable main model (e.g. deepseek-v4-flash-vision-exp) directly — or wait
-  for upstream attachment forwarding. If your model actually supports images but is still blocked,
-  check whether its provider configuration declares the image input modality
-  (`input: ["text", "image"]`) — a common gap for third-party GPT-class models
+- **Upgrading requires a DSH restart**: the plugin composition mounts **once per host process** —
+  configuration values re-resolve per session, but plugin code (tool schemas, tool descriptions,
+  injected strings) is frozen in-process. After any plugin upgrade, restart DSH; new sessions alone
+  still run the old code
+- **Non-vision main models cannot receive pasted images**: DSH blocks image attachments at send
+  time based on the main model's capability (`MODEL_DOES_NOT_SUPPORT_IMAGES`). For image analysis,
+  use a vision-capable main model directly — or wait for upstream attachment forwarding. If your
+  model actually supports images but is still blocked, check whether its provider configuration
+  declares the image input modality (`input: ["text", "image"]`) — a common gap for third-party
+  GPT-class models
 - **web_search is billed separately**: librarian prefers MCP (free). `web_search` runs through the
   host search service, which issues an independent auxiliary model request per query. For open-ended
   research, give the task a search budget in the prompt
@@ -259,12 +235,12 @@ expected behavior) for verifying a fresh deployment. T3 uses the baseline projec
   approval state at startup, but the `bash`/`edit`/`write` tool schemas still expose optional
   `sandbox_permissions` / `justification` fields. Some models fill those fields unprompted; a child
   cannot escalate anyway, so the extra arguments only trigger parameter-validation errors
-  (`invalid justification`, `not strictly wider`). The bundled `sandbox-strip` plugin removes the two
-  fields from role-subagent child tool calls at the `tools/pre-execute` waterfall and appends a
+  (`invalid justification`, `not strictly wider`). The bundled `sandbox-strip` plugin removes the
+  two fields from role-subagent child tool calls at the `tools/pre-execute` waterfall and appends a
   `[sandbox: stripped ...]` note to the result so the model sees the correction. In this preset's
   own top-level sessions it additionally strips only the shapes DSH would always reject before any
   approval prompt (empty justification, single-field pairs, non-widening modes — judged with the
-  host's own WIDER_MODES table); **legitimate escalation requests (strictly wider mode +
+  host's own `WIDER_MODES` table); **legitimate escalation requests (strictly wider mode +
   non-empty justification) are kept and still prompt for approval**. Sessions that do not use this
   preset never load the plugin, so their behavior is unchanged. This is a preset-level workaround,
   not a fix: the real fix is upstream — DSH should stop exposing escalation fields to children whose
@@ -285,31 +261,40 @@ expected behavior) for verifying a fresh deployment. T3 uses the baseline projec
   the delegation turn reports "still running; cannot output a final conclusion yet", defers
   dependent work until the finish notice, and wakes to integrate the result. The model may still
   end its turn before the child settles (no force-wait), but it no longer misreports completion
-- **Custom profile presets keep the plugin versions they were copied with**: a profile is a full
-  copy of the bundled preset directory at creation time; upgrading the npm package re-seeds only
-  the bundled preset, so old profile directories keep their copied plugins until you recreate or
-  copy them again (their configuration snapshots survive — only the plugins age)
+- **MCP servers are declared, not mounted into children**: the 0.2.0 delegation tool hands a child
+  no `childCtx`, so a role's `mcps` list is carried by the configuration and by the librarian
+  persona rather than by a per-child MCP scope. librarian still works — its persona directs it at
+  context7/gh_grep, and the tools it can reach are the ones the session already has
 
 ## FAQ
 
 **Which API key do I need?**
-A DeepSeek API key — the default role models route through deepseek-official.
-Roles can be pointed at any provider you imported in **Settings → Models**.
+A DeepSeek API key — the shipped role models route through `deepseek-official`. Roles can be
+pointed at any provider you imported in **Settings → Models**.
 
 **Can I use other models per role?**
-Yes — every role's model and reasoning effort is configurable via the user JSON
-(or conversational config). Unknown model ids are rejected at delegation time
-with the full list of imported models.
+Yes — every role's provider, model, reasoning effort and temperature is configurable through the
+JSON channels above (or conversationally). An unknown model fails loudly on the first delegation
+instead of silently degrading.
 
 **How do I uninstall?**
-Remove `$DSH_HOME/.agent-presets/oh-my-dsh-slim` (or disable the preset in
-**Settings → Agent Presets**). If you installed the marketplace seeder plugin,
-uninstalling the plugin does not remove the preset directory.
+`dsh plugin --profile <profile> remove oh-my-dsh-slim`, then restart DSH. Nothing was copied into
+`$DSH_HOME`, so there is no leftover directory to delete.
+
+**Does this work on DSH 0.1.x?**
+No. DSH 0.1.x has no declarative preset seam. On DSH ≤ 0.1.5-rc.2 use oh-my-dsh-slim 0.5.3; on the
+0.1.6–0.1.x line, upgrade the host to 0.2.0-rc.2.
 
 **Image analysis?**
-Use a vision-capable main model (e.g. deepseek-v4-flash-vision-exp) and paste
-directly. The observer role is reserved until the harness can forward
-attachments into subagent contexts.
+Use a vision-capable main model and paste directly. The observer role is reserved until the harness
+can forward attachments into subagent contexts.
+
+## Roadmap
+
+- **observer re-enable** — waiting on upstream DSH support for forwarding message attachments into
+  subagent contexts (see the role matrix note above)
+- **Per-role MCP delivery** — waiting on a `childCtx` (or equivalent) in the delegation seam so a
+  child can be given its own MCP scope
 
 ## Changelog
 

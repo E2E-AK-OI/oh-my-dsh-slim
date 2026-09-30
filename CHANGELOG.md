@@ -4,6 +4,109 @@ All notable changes to oh-my-dsh-slim. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions match npm
 package releases where applicable.
 
+## [0.6.0] — 2026-09-30
+
+> **Supported DSH: 0.2.0-rc.2** — verified end to end.
+> **This release needs DSH ≥ 0.2.0-rc.2, and DSH 0.2.0 needs this release.** DSH 0.2.0 replaced
+> directory agent presets with **declarative** ones, so 0.5.x installs there and then never appears,
+> and 0.6.x cannot run on the 0.1.x lines at all. On DSH ≤ 0.1.5-rc.2 stay on 0.5.3; the 0.1.6–0.1.x
+> line is supported by neither — 0.6.0 targets the *released* declarative seam.
+> **Upgrading requires a DSH restart** (plugin code mounts once per host process).
+
+### Changed
+
+- **The preset is declarative — the directory preset is gone.** `cordis.patch.yml` (shipped at the
+  repo root and inside `npm-package/`) now inserts two loader rows: `preset-oh-my-dsh-slim` →
+  `preset/preset.js`, an `@deepseek-ai/dsh-agent-preset` row whose `config.plugins` **is** the whole
+  agent plane (the six role tools, the orchestrator persona, the planning and compaction rows and
+  the delegation group — 19 top-level rows), plus `omds-seeder` (`lib/index.js`) as the bundle's
+  reporting companion. Nothing is seeded into `$DSH_HOME` any more, so there is nothing left to
+  clean up on uninstall.
+- **Install, update and uninstall are `dsh plugin`.** `dsh plugin --profile <name> add
+  oh-my-dsh-slim` pnpm-installs the package into the profile and reconciles it into the profile's
+  `dsh.profile.bundles` layer list, which is what makes the loader read this package's bundle
+  patch. `engines.dsh` and the eight optional peer ranges are `"0.2.0-rc.2 || 0.2.0"`.
+- **Configuration is file-based again.** DSH 0.2.0 removed the 0.1.x settings-namespace API, so the
+  channels are `$OH_MY_DSH_SLIM_CONFIG` (tests/CI) → `profile.json` beside the mounted copy →
+  `$DSH_HOME/oh-my-dsh-slim.json` → the bundled `defaults.json`. All four share one document shape
+  and one merge rule (user values win key by key; arrays replace whole).
+- **The default role models follow the 0.2.0 `deepseek-official` catalog**: `deepseek-v4-flash` →
+  `deepseek-flash` for designer, fixer, explorer, librarian and observer; oracle keeps
+  `deepseek-v4-pro`.
+- **Per-role model parameters come from a standing listener.** `effort-by-role.js` is replaced by
+  `preset/subagent-roles.js`: one `agent/request` listener covering all six roles. It identifies the
+  role from the persona marker the child persists in its `subagent/descriptor` event (written before
+  the child's first request), re-reads the configuration on **every** delegation, and validates a
+  configured effort against the model's declared list through `llm.resolveModelInfo` — naming the
+  role, the model and the fix, before the host would reject it at dispatch time.
+- **`omds-seeder` reports instead of gating.** A thrown row now aborts the whole preset mount, so the
+  row logs the host verdict (warning on `older` / `directory` / `legacy-preset-model`) instead of
+  calling `assertHostCompatible()`.
+
+### Fixed
+
+- **Relative row names silently never started.** A row name resolves against the *declaring patch's*
+  `baseUrl`, not the preset's directory, so all nine package-local rows — the five role rows behind
+  `./roles.js` plus `./subagent-result.js`, `./subagent-roles.js`, `./early-close-context.js` and
+  `./sandbox-strip.js` — audited as `never started` while the preset still reported itself mounted.
+  Every package-local row now carries an absolute `file:` URL built from `import.meta.url`, and a
+  test forbids relative row names outright.
+- **`defaults.json` was read from the wrong directory.** `readDefaults()` joined the package root
+  while the file ships in `preset/`, so every host without a user config file failed with
+  `oh-my-dsh-slim: invalid JSON configuration at …/npm-package/defaults.json: ENOENT`.
+- **The bundled role table was discarded whenever no user file existed.** `selectUserRoles()` read
+  only `user.presets[<name>]` and ignored `defaults.presets[<name>]`, where the shipped table
+  actually lives — leaving every role with nothing but the temperature/maxTokens floor: no provider,
+  no model, no effort, no deny list. The three role layers now merge key by key, so a user file that
+  overrides only `model` keeps the shipped `deny` list instead of erasing it.
+- **Per-role `effort` never reached the host.** `resolveRole()` set `agentOptions.model`,
+  `.provider` and `.maxTokens` but never `.reasoningEffort`, so every shipped effort value was dead
+  configuration. It is now forwarded, and the host's own delegation preflight resolves it through
+  `llm.resolveCallConfig`.
+- **The role wrapper did not declare the services the host implementation reads.** It declared only
+  `inject = ['loader']` while delegating straight into `@deepseek-ai/dsh-tool-subagent`, which reads
+  `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt` and `ctx.sessionProjections`; the mount threw
+  `cannot get property "tools" without inject` and not one role tool registered. The wrapper now
+  declares all five and reads `tools` through `ctx.get('tools')` with a `Reflect` fallback.
+- **The role wrapper dropped `toolName`.** The stock plugin registers a tool named `config.toolName`,
+  and the stock-shaped config the wrapper handed back omitted it — so every role row registered the
+  default `subagent` tool instead of `subagent_oracle` / `subagent_designer` / …, and the role name
+  never reached the orchestrator model. `toolName` is now forwarded.
+- **The effort-mismatch error pointed at a card that no longer exists.** It told the user to open
+  *Settings → Plugins → oh-my-dsh-slim*; it now names the configuration file that was actually read.
+
+### Added
+
+- `test/package.test.mjs` (`npm test`) — eight structural tests that need no DSH install: the two
+  bundle patches agree row for row; the patch declares exactly one agent-preset row and it points at
+  `preset/preset.js`; no preset row may name a relative path, and every package-local row resolves
+  to an existing absolute `file:` URL under `npm-package/preset/` that is not YAML; the six role rows
+  are found through the shared `roles.js` URL and their personas round-trip through
+  `composeRolePersona` → `roleIdFromEvents`; the wrapper declares the five services and hands back a
+  stock config that keeps `toolName` and leaks no `definition`; the bundled `defaults.json` reaches
+  every role with no user file present; a *partial* user override keeps the shipped `provider`,
+  `effort`, `deny` and `maxTokens`; and every role carries its shipped route into the host's
+  `agentOptions`.
+- `npm-package/preset/bridge.js` — the one way these rows reach the host's own module instances
+  (`ctx.loader.internal.import` under the host's base URL), because a bare `@deepseek-ai/*` import
+  from a preset row resolves a stale copy out of the user's global `node_modules`.
+- `npm-package/package.json` gained a `prepare` step that copies the repository README and
+  CHANGELOG into the published package. The docs keep a single source of truth (the repository root)
+  while `npm publish` from `npm-package/` still ships a complete tarball; the generated copies are
+  gitignored.
+
+### Removed
+
+- The entire directory-preset path: `agent.cordis.yml` and `preset.yml`, `preset/` at the repo root,
+  `config-loader.js`, `settings-schema.js`, `oh-my-dsh-slim.schema.json`, `GUI-TEST-TASKS.md`,
+  `examples/omo-probe-baseline/`, the whole `scripts/` probe and self-test kit, `npm-package/client/`
+  (the GUI settings card), the duplicated `npm-package/preset/` copies of the docs, patch, manifest
+  and LICENSE-adjacent files, and the 0.1.x modules that only made sense there: the tool-subagent
+  fork `role-subagent.js` and `effort-by-role.js`.
+- The 0.1.x host settings namespace, the GUI settings card, the `/omds` RPC routes and the
+  multi-preset profile directories (`$DSH_HOME/.agent-presets/profile-<prefix>-<hash>/`). DSH 0.2.0
+  has no seam for any of them: its preset registry neither scans directories nor accepts preset
+  paths.
 ## [0.5.3] — 2026-09-28
 
 > **Supported DSH: 0.1.2-rc.1 … 0.1.5-rc.2** — both host lines are verified end to end.
